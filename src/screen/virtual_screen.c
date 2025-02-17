@@ -5,30 +5,32 @@
 #include "virtual_screen.h"
 
 #include <curses.h>
-#include <math.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <bits/signum-generic.h>
 
+#include "virtual_screen_data.h"
 #include "debug.h"
+#include "../math/matrix_op.h"
+#include "../math/shape.h"
 
 #define RENDER_COLOR 1
 #define DEBUG_COLOR 2
 
 static char *debugMessage;
 
-static void GetCoordsByPixel(struct Vector2f *result, const struct VirtualScreen *screen, int x, int y);
+static void GetCoordsByPixel(struct Vector2f *result, const struct VirtualScreenData *screen, int x, int y);
 
 static void Dispose(int sig);
 
-static void DrawLine(const struct VirtualScreen *screen, const struct Line3f *line);
+static void DrawLine(const struct VirtualScreenData *screen, const struct Line3f *line);
 
-static void DrawBox(const struct VirtualScreen *screen, const struct Box *cube);
+static void DrawBox(const struct VirtualScreenData *screen, const struct Box *cube);
 
-struct VirtualScreen *scr_New(const int maxFrameRate, const float fov, const float near, const float far) {
-    struct VirtualScreen *ptr = malloc(sizeof(struct VirtualScreen));
+struct VirtualScreenData *scr_New(const int maxFrameRate, const float fov, const float near, const float far) {
+    struct VirtualScreenData *ptr = malloc(sizeof(struct VirtualScreenData));
     if (ptr == NULL) {
         LogAbort("ERROR: Cannot allocate memory for Virtual Screen\n");
         abort();
@@ -43,7 +45,7 @@ struct VirtualScreen *scr_New(const int maxFrameRate, const float fov, const flo
     return ptr;
 }
 
-void src_Init(struct VirtualScreen *screen) {
+void src_Init(struct VirtualScreenData *screen) {
     debug_Init();
 
     signal(SIGINT, Dispose);
@@ -60,13 +62,13 @@ void src_Init(struct VirtualScreen *screen) {
     screen->aspectRatio = (float) screen->size.y / (float) screen->size.x;
 
     struct Matrix4x4f matrix;
-    mat4x4f_MakePerspective(&matrix, screen->aspectRatio, screen->fov, screen->near, screen->far);
+    mat4x4f_MakePerspective(&matrix, screen);
     screen->perspectiveMatrix = matrix;
 
     debugMessage = malloc(screen->size.x * sizeof(char));
 }
 
-void scr_InitRenderLoop(struct VirtualScreen *screen) {
+void scr_InitRenderLoop(struct VirtualScreenData *screen) {
     float counter = 0.0f;
     screen->isRunning = true;
 
@@ -93,7 +95,7 @@ void pdm(const char *format, ...) {
     va_end(args);
 }
 
-static void DrawLine(const struct VirtualScreen *screen, const struct Line3f *line) {
+static void DrawLine(const struct VirtualScreenData *screen, const struct Line3f *line) {
     struct Vector4f p1;
     struct Vector4f p2;
     struct Line3f copiedLine = *line;
@@ -136,7 +138,7 @@ static void DrawLine(const struct VirtualScreen *screen, const struct Line3f *li
     }
 }
 
-static void DrawBoxSide(const struct VirtualScreen *screen, struct Line3f *line, const float xDelta, const float yDelta) {
+static void DrawBoxSide(const struct VirtualScreenData *screen, struct Line3f *line, const float xDelta, const float yDelta) {
     line->p2 = line->p1;
     line->p2.y -= yDelta;
     DrawLine(screen, line);
@@ -154,7 +156,7 @@ static void DrawBoxSide(const struct VirtualScreen *screen, struct Line3f *line,
     DrawLine(screen, line);
 }
 
-static void DrawBox(const struct VirtualScreen *screen, const struct Box *cube) {
+static void DrawBox(const struct VirtualScreenData *screen, const struct Box *cube) {
     const float xDelta = cube->topLeftFar.x - cube->botRightNear.x;
     const float yDelta = cube->topLeftFar.y - cube->botRightNear.y;
     const float zDelta = cube->topLeftFar.z - cube->botRightNear.z;
@@ -190,7 +192,7 @@ static void Dispose(int sig) {
     exit(0);
 }
 
-static void GetCoordsByPixel(struct Vector2f *result, const struct VirtualScreen *screen, const int x, const int y) {
+static void GetCoordsByPixel(struct Vector2f *result, const struct VirtualScreenData *screen, const int x, const int y) {
     const float screenWidthHalf = (float) screen->size.x / 2.0f;
     const float screenHeightHalf = (float) screen->size.y / 2.0f;
     const float newX = ((float) x - screenWidthHalf) * (1.0f / screenWidthHalf);
