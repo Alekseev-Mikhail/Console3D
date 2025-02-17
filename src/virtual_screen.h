@@ -15,10 +15,15 @@ struct VirtualScreen {
     bool isRunning;
 };
 
-struct VirtualScreen *NewVirtualScreen(int width, int height, int framePerSec);
+struct VirtualScreen *scr_New(int framePerSec);
 
-void src_Init();
+void src_Init(struct VirtualScreen *screen);
 
-void scr_InitRenderLoop(const struct VirtualScreen *screen);
+void scr_InitRenderLoop(struct VirtualScreen *screen);
+
+/**
+ * Push Debug Message
+ */
+void pdm(const char *format, ...);
 
 #endif //VIRTUAL_SCREEN_H

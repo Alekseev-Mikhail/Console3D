@@ -3,11 +3,9 @@
 #include "virtual_screen.h"
 
 int main(void) {
-    const int width = 160;
-    const int height = 48;
-    struct VirtualScreen *screen = NewVirtualScreen(width, height, 60);
+    struct VirtualScreen *screen = scr_New(60);
 
-    src_Init();
+    src_Init(screen);
     scr_InitRenderLoop(screen);
 
     free(screen);

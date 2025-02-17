@@ -8,6 +8,8 @@ add_executable(console_25d src/main.c
         src/virtual_screen.h
         src/math.c
         src/math.h
+        src/debug.c
+        src/debug.h
 )
 
 target_link_libraries(console_25d m)
