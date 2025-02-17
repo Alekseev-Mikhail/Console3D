@@ -13,7 +13,6 @@
 #include <bits/signum-generic.h>
 
 #include "debug.h"
-#include "math.h"
 
 #define RENDER_COLOR 1
 #define DEBUG_COLOR 2
@@ -24,9 +23,11 @@ static void GetCoordsByPixel(struct Vector2f *result, const struct VirtualScreen
 
 static void Dispose(int sig);
 
-static void DrawLine(const struct VirtualScreen *screen, const struct Line *line);
+static void DrawLine(const struct VirtualScreen *screen, const struct Line3f *line);
 
-struct VirtualScreen *scr_New(const int framePerSec) {
+static void DrawBox(const struct VirtualScreen *screen, const struct Box *cube);
+
+struct VirtualScreen *scr_New(const int maxFrameRate, const float fov, const float near, const float far) {
     struct VirtualScreen *ptr = malloc(sizeof(struct VirtualScreen));
     if (ptr == NULL) {
         LogAbort("ERROR: Cannot allocate memory for Virtual Screen\n");
@@ -34,7 +35,10 @@ struct VirtualScreen *scr_New(const int framePerSec) {
     }
     const struct Vector2i size = {-1, -1};
     ptr->size = size;
-    ptr->frameRate = 1000000 / framePerSec;
+    ptr->maxFrameRate = 1000000 / maxFrameRate;
+    ptr->fov = fov;
+    ptr->near = near;
+    ptr->far = far;
     ptr->isRunning = false;
     return ptr;
 }
@@ -42,13 +46,8 @@ struct VirtualScreen *scr_New(const int framePerSec) {
 void src_Init(struct VirtualScreen *screen) {
     debug_Init();
 
-    (void) signal(SIGINT, Dispose); /* arrange interrupts to terminate */
-
-    (void) initscr(); /* initialize the curses library */
-    keypad(stdscr, TRUE); /* enable keyboard mapping */
-    (void) nonl(); /* tell curses not to do NL->CR/NL on output */
-    (void) cbreak(); /* take input chars one at a time, no wait for \n */
-    (void) echo(); /* echo input - in color */
+    signal(SIGINT, Dispose);
+    initscr();
 
     if (has_colors()) {
         start_color();
@@ -58,6 +57,11 @@ void src_Init(struct VirtualScreen *screen) {
     }
 
     getmaxyx(stdscr, screen->size.y, screen->size.x);
+    screen->aspectRatio = (float) screen->size.y / (float) screen->size.x;
+
+    struct Matrix4x4f matrix;
+    mat4x4f_MakePerspective(&matrix, screen->aspectRatio, screen->fov, screen->near, screen->far);
+    screen->perspectiveMatrix = matrix;
 
     debugMessage = malloc(screen->size.x * sizeof(char));
 }
@@ -68,32 +72,14 @@ void scr_InitRenderLoop(struct VirtualScreen *screen) {
 
     while (screen->isRunning) {
         counter += 0.005f;
-        const struct Line line = {0.0f, 0.0f, 0.8f, sinf(counter) * 0.6f, 0.05f};
-        const struct Line line1 = {0.2f, -0.7f, 0.8f, sinf(counter) * 0.6f, 0.05f};
-        const struct Line line2 = {0.0f, 0.0f, 0.2f, -0.7f, 0.05f};
-        struct Line line3 = {0.0f, 0.0f, 0.5f, 0.0f, 0.1f};
-        struct Matrix2x2f mat;
-        mat2x2f_MakeRotation(&mat, counter);
-        mat2x2f_Mult(&line3.end, &mat, &line.end);
-        DrawLine(screen, &line);
-        DrawLine(screen, &line1);
-        DrawLine(screen, &line2);
-        DrawLine(screen, &line3);
-
-        // struct Line line = {0.0f, 0.0f, -0.5f, 1.0f, 0.1f};
-        // const struct Line line1 = {0.0f, 0.0f, 0.30f, 1.0f, 0.05f};
-        // const struct Line line2 = {0.0f, 0.0f, 1.0f, 1.0f, 0.05f};
-        // const struct Line line3 = {0.0f, 0.0f, 0.0f, 1.0f, 0.05f};
-        // DrawLine(screen, &line);
-        // DrawLine(screen, &line1);
-        // DrawLine(screen, &line2);
-        // DrawLine(screen, &line3);
+        struct Box cube = {0.1f, -0.05f, 1.0f, -0.1f, 0.05f, 0.3f, 0.05f};
+        DrawBox(screen, &cube);
 
         move(0, 0);
         attrset(COLOR_PAIR(DEBUG_COLOR));
         addstr(debugMessage);
         refresh();
-        usleep(screen->frameRate);
+        usleep(screen->maxFrameRate);
         clear();
         attrset(COLOR_PAIR(RENDER_COLOR));
     }
@@ -107,9 +93,28 @@ void pdm(const char *format, ...) {
     va_end(args);
 }
 
-static void DrawLine(const struct VirtualScreen *screen, const struct Line *line) {
+static void DrawLine(const struct VirtualScreen *screen, const struct Line3f *line) {
+    struct Vector4f p1;
+    struct Vector4f p2;
+    struct Line3f copiedLine = *line;
+
+    // Make homogeneous
+    vec3f_MakeHomogeneous(&p1, &copiedLine.p1);
+    vec3f_MakeHomogeneous(&p2, &copiedLine.p2);
+
+    // Apply perspective matrix
+    mat4x4f_Mult(&p1, &screen->perspectiveMatrix, &p1);
+    mat4x4f_Mult(&p2, &screen->perspectiveMatrix, &p2);
+
+    // Divide by w
+    vec4f_PerspectiveDivide(&copiedLine.p1, &p1);
+    vec4f_PerspectiveDivide(&copiedLine.p2, &p2);
+
+    // Temporary solution. Ignore depth (z)
+    const struct Line2f line2f = {copiedLine.p1.x, copiedLine.p1.y, copiedLine.p2.x, copiedLine.p2.y, copiedLine.width};
+    
     struct Rectangle rect;
-    line_StretchToRectangle(&rect, line);
+    line_StretchToRectangle(&rect, &line2f);
 
     for (int rowIndex = 0; rowIndex < screen->size.y; ++rowIndex) {
         for (int horizontalOffset = 0; horizontalOffset < screen->size.x; ++horizontalOffset) {
@@ -129,6 +134,53 @@ static void DrawLine(const struct VirtualScreen *screen, const struct Line *line
             }
         }
     }
+}
+
+static void DrawBoxSide(const struct VirtualScreen *screen, struct Line3f *line, const float xDelta, const float yDelta) {
+    line->p2 = line->p1;
+    line->p2.y -= yDelta;
+    DrawLine(screen, line);
+
+    line->p1 = line->p2;
+    line->p2.x -= xDelta;
+    DrawLine(screen, line);
+
+    line->p1 = line->p2;
+    line->p2.y += yDelta;
+    DrawLine(screen, line);
+
+    line->p1 = line->p2;
+    line->p2.x += xDelta;
+    DrawLine(screen, line);
+}
+
+static void DrawBox(const struct VirtualScreen *screen, const struct Box *cube) {
+    const float xDelta = cube->topLeftFar.x - cube->botRightNear.x;
+    const float yDelta = cube->topLeftFar.y - cube->botRightNear.y;
+    const float zDelta = cube->topLeftFar.z - cube->botRightNear.z;
+    struct Line3f line;
+    line.width = cube->renderLineWidth;
+
+    line.p1 = cube->topLeftFar;
+    DrawBoxSide(screen, &line, xDelta, yDelta);
+    line.p1 = cube->topLeftFar;
+    line.p1.z -= zDelta;
+    DrawBoxSide(screen, &line, xDelta, yDelta);
+
+    line.p1 = cube->topLeftFar;
+    line.p2 = line.p1;
+    line.p2.z -= zDelta;
+    DrawLine(screen, &line);
+    line.p1.y -= yDelta;
+    line.p2.y -= yDelta;
+    DrawLine(screen, &line);
+    line.p1 = cube->botRightNear;
+    line.p2 = line.p1;
+    line.p2.z += zDelta;
+    DrawLine(screen, &line);
+    line.p1.y += yDelta;
+    line.p2.y += yDelta;
+    DrawLine(screen, &line);
 }
 
 static void Dispose(int sig) {

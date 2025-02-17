@@ -13,8 +13,6 @@ static char FILE_NAME[] = "debug.txt";
 static FILE *file;
 
 void debug_Init() {
-    system("touch debug.txt");
-
     file = fopen(FILE_NAME, "w");
     if (file == NULL) {
         fprintf(stderr, "ERROR: unable to open file %s\n", FILE_NAME);

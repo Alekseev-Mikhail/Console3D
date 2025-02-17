@@ -4,18 +4,24 @@
 
 #ifndef VIRTUAL_SCREEN_H
 #define VIRTUAL_SCREEN_H
+
 #include <stdbool.h>
 
 #include "math.h"
 
 struct VirtualScreen {
     struct Vector2i size;
-    float ratio;
-    int frameRate;
+    int maxFrameRate;
+    float fov;
+    float near;
+    float far;
+    float aspectRatio;
     bool isRunning;
+
+    struct Matrix4x4f perspectiveMatrix;
 };
 
-struct VirtualScreen *scr_New(int framePerSec);
+struct VirtualScreen *scr_New(int maxFrameRate, float fov, float near, float far);
 
 void src_Init(struct VirtualScreen *screen);
 
