@@ -27,7 +27,7 @@ void debug_Dispose() {
 void Log(const char *format, ...) {
     va_list args;
     va_start(args, format);
-    fprintf(file, format, args);
+    vfprintf(file, format, args);
     va_end(args);
 }
 
